@@ -1,0 +1,61 @@
+# MRI T1 denoising — shared config (local + GPU server)
+
+project:
+  # Override with env PJ_DENOISE_ROOT if needed.
+  # GPU default: /mnt/workspace/PJ_denoise
+
+data:
+  raw_root: dataset/cn_project_t1_noise2
+  processed_root: data/processed
+  # One-time: python scripts/materialize_slices.py  (from existing processed npz)
+  slice_cache_root: data/slice_cache
+  prefer_slice_cache: true
+  manifest: dataset/cn_project_t1_noise2/manifest.csv
+
+preprocess:
+  axial_axis: 0
+  brain_threshold: 50.0
+  min_brain_ratio: 0.05
+  clip_percentile_low: 0.5
+  clip_percentile_high: 99.5
+  # Auto-updated by preprocess.py from dataset max slice size (rounded to multiple of 16).
+  pad_height: 256
+  pad_width: 256
+  split_seed: 42
+  train_ratio: 0.8
+  val_ratio: 0.1
+  # test_ratio = 1 - train - val
+
+train:
+  batch_size: 16
+  num_workers: 4
+  epochs: 50
+  lr: 1.0e-4
+  weight_decay: 0.0
+  l1_weight: 1.0
+  ssim_weight: 0.5
+  early_stop_patience: 10
+  checkpoint_metric: val_psnr
+  augment_flip: true
+  # npz fallback only (slow); ignored when slice memmap cache exists
+  case_grouped_batches: true
+  case_cache_size: 4
+  metric_every: 10             # train: GPU PSNR/SSIM every N batches (val always every batch)
+  persistent_workers: true
+  prefetch_factor: 2
+
+model:
+  in_channels: 1
+  out_channels: 1
+  base_channels: 64
+
+inference:
+  batch_size: 8
+
+swanlab:
+  experiment_name: unet-mri-denoise
+  description: "MRI T1 2D U-Net denoising (PJ2)"
+  tags: ["PJ2", "denoise", "UNet"]
+  log_images_every: 5      # 每 N 个 epoch 记录去噪样例图；0 关闭
+  log_batch_every: 50      # 训练时每 N 个 batch 记录 batch 级曲线；0 关闭
+  run_test_after_train: true  # 训练结束后在 test 集评估并上传 SwanLab

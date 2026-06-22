@@ -1,0 +1,10 @@
+nibabel==5.4.2
+nvidia-ml-py==13.610.43
+orjson==3.11.9
+pip==26.1.2
+prettytable==3.17.0
+pyecharts==2.1.0
+simplejson==4.1.1
+swanlab==0.8.3
+watchdog==6.0.0
+wrapt==2.2.1

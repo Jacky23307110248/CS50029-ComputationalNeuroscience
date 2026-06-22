@@ -1,0 +1,9 @@
+# GPU server (/mnt/workspace/PJ_denoise): training + evaluation
+# Install ON TOP of the image's PyTorch. Do NOT reinstall torch here unless missing.
+nibabel>=5.0
+numpy>=1.24
+pandas>=2.0
+pyyaml>=6.0
+scipy>=1.10
+tqdm>=4.65
+swanlab>=0.4.8

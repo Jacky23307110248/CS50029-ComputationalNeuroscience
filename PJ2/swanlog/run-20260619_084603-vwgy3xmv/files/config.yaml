@@ -1,0 +1,155 @@
+augment_flip:
+  desc: ''
+  sort: 9
+  value: true
+axial_axis:
+  desc: ''
+  sort: 18
+  value: 0
+base_channels:
+  desc: ''
+  sort: 17
+  value: 64
+batch_size:
+  desc: ''
+  sort: 0
+  value: 16
+brain_threshold:
+  desc: ''
+  sort: 19
+  value: 50.0
+case_cache_size:
+  desc: ''
+  sort: 11
+  value: 4
+case_grouped_batches:
+  desc: ''
+  sort: 10
+  value: true
+checkpoint_metric:
+  desc: ''
+  sort: 8
+  value: val_psnr
+clip_percentile_high:
+  desc: ''
+  sort: 22
+  value: 99.5
+clip_percentile_low:
+  desc: ''
+  sort: 21
+  value: 0.5
+device:
+  desc: ''
+  sort: 34
+  value: cuda
+early_stop_patience:
+  desc: ''
+  sort: 7
+  value: 10
+epochs:
+  desc: ''
+  sort: 2
+  value: 50
+in_channels:
+  desc: ''
+  sort: 15
+  value: 1
+l1_weight:
+  desc: ''
+  sort: 5
+  value: 1.0
+lr:
+  desc: ''
+  sort: 3
+  value: 0.0001
+metric_every:
+  desc: ''
+  sort: 12
+  value: 10
+min_brain_ratio:
+  desc: ''
+  sort: 20
+  value: 0.05
+num_workers:
+  desc: ''
+  sort: 1
+  value: 4
+out_channels:
+  desc: ''
+  sort: 16
+  value: 1
+pad_height:
+  desc: ''
+  sort: 23
+  value: 256
+pad_width:
+  desc: ''
+  sort: 24
+  value: 256
+persistent_workers:
+  desc: ''
+  sort: 13
+  value: true
+prefetch_factor:
+  desc: ''
+  sort: 14
+  value: 2
+resume_from:
+  desc: ''
+  sort: 37
+  value: outputs/checkpoints/last.pt
+split_seed:
+  desc: ''
+  sort: 25
+  value: 42
+ssim_weight:
+  desc: ''
+  sort: 6
+  value: 0.5
+swanlab_description:
+  desc: ''
+  sort: 29
+  value: MRI T1 2D U-Net denoising (PJ2)
+swanlab_experiment_name:
+  desc: ''
+  sort: 28
+  value: unet-mri-denoise
+swanlab_log_batch_every:
+  desc: ''
+  sort: 32
+  value: 50
+swanlab_log_images_every:
+  desc: ''
+  sort: 31
+  value: 5
+swanlab_run_test_after_train:
+  desc: ''
+  sort: 33
+  value: true
+swanlab_tags:
+  desc: ''
+  sort: 30
+  value:
+  - PJ2
+  - denoise
+  - UNet
+train_ratio:
+  desc: ''
+  sort: 26
+  value: 0.8
+train_slices:
+  desc: ''
+  sort: 35
+  value: 72123
+val_ratio:
+  desc: ''
+  sort: 27
+  value: 0.1
+val_slices:
+  desc: ''
+  sort: 36
+  value: 9095
+weight_decay:
+  desc: ''
+  sort: 4
+  value: 0.0

@@ -1,0 +1,11 @@
+# 课程原始数据（仓库外或本地专用）
+cn_project/
+
+# PJ2 大体积数据
+PJ2/data/
+PJ2/dataset/
+
+# PJ2 模型权重与预测体数据
+PJ2/outputs/checkpoints/
+PJ2/outputs/predictions/
+PJ2/outputs/eval_run1/predictions/

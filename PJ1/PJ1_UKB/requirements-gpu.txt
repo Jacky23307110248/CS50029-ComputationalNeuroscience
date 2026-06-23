@@ -1,0 +1,18 @@
+# GPU server: install ON TOP of image torch (ROCm). Do NOT reinstall torch here.
+# See also PJ1/requirements-gpu.txt for the full PJ1 stack.
+
+monai>=1.3
+nibabel>=5.0
+numpy>=1.24
+pandas>=2.0
+pyyaml>=6.0
+scipy>=1.10
+scikit-learn>=1.3
+tqdm>=4.65
+swanlab>=0.5.0
+gdown>=5.0
+huggingface_hub>=0.20
+modelscope>=1.9.0
+# FSL is NOT pip:
+#   python scripts/setup_fsl_official.py
+#   export FSLDIR=$HOME/fsl && source $FSLDIR/etc/fslconf/fsl.sh

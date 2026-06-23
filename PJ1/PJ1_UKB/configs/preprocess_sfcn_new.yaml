@@ -1,0 +1,30 @@
+# SFCN preprocessing (reference-aligned) -> processed/UKB_sfcn_new
+# Usage: python scripts/preprocess_ukb_sfcn_new.py --config configs/preprocess_sfcn_new.yaml --jobs 8
+
+dataset: ukb
+
+data:
+  csv: null
+  processed_root: null
+  exclude_ids: []
+  exclude_qc_flagged: false
+
+preprocess:
+  profile: sfcn_new
+  output_size: [160, 192, 160]
+  mni_mm: 1
+  n4: true
+  n4_fail_fast: false
+  resample_1mm: true
+  resample_spacing: 1.0
+  bet_frac: 0.5
+  bet_robust: true
+  bet_gradient_remove: true
+  flirt_cost: corratio
+  flirt_interp: trilinear
+  apply_mni_mask: false
+  zero_background: false
+  crop_mode: center_crop_pad
+  cleanup_work: true
+  qc: true
+  qc_root: null

@@ -1,0 +1,37 @@
+# --- PJ1: large / regenerable (see ModelScope sSzHox/PJ_ADNI_UKB) ---
+
+# Raw course MRI (download: scripts/download_modelscope.py --target data)
+data/
+
+# Preprocessed intermediates (regenerate from data/ + FSL)
+PJ1_UKB/processed/
+PJ1_ADNI/dataset/processed_rootstrap/
+
+# Pretrained + finetuned weights (download: --target weights or full download)
+PJ1_UKB/checkpoints/
+PJ1_UKB/outputs/
+PJ1_ADNI/models/
+PJ1_ADNI/outputs/
+
+# Volume blobs (safety net if paths change)
+*.nii
+*.nii.gz
+*.npz
+*.npy
+*.pth
+*.pt
+*.p
+
+# Python / test caches
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+*.py[cod]
+
+# Training platform / upload tooling
+**/swanlab/
+**/.ms_upload_cache
+
+# OS
+.DS_Store
+Thumbs.db

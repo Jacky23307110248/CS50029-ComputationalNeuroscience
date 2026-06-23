@@ -1,0 +1,111 @@
+# SFCN ADNI v4: strict alignment with daomuyang/ADNI GitHub reference.
+# Reference: https://github.com/daomuyang/ADNI/tree/main/ADNI
+
+dataset: adni
+task: classification
+
+data:
+  csv: data/ADNI_data_105cases/ADNI_data/selected_ADNI_105_info.csv
+  processed_root: processed/ADNI_sfcn_v4
+  id_column: eid
+  label_column: label
+  classes: [CN, MCI, AD]
+  exclude_ids: []
+  exclude_qc_flagged: false
+
+preprocess:
+  profile: sfcn_new_v4
+  output_size: [160, 192, 160]
+  mni_mm: 1
+  n4: true
+  n4_fail_fast: true
+  n4_max_iterations: [40, 40, 20, 10]
+  n4_otsu_only: true
+  resample_fail_fast: true
+  fslreorient2std: true
+  fsl_tools_optional: true
+  resample_1mm: true
+  resample_spacing: 1.0
+  robustfov: true
+  bet_frac: 0.4
+  bet_robust: true
+  bet_gradient_remove: true
+  flirt_cost: corratio
+  flirt_interp: trilinear
+  apply_mni_mask: false
+  mean_norm_mode: full
+  mean_norm_strict: true
+  use_existing_mni: true
+  use_csv_relative_path: true
+  zero_background: false
+  crop_mode: crop_center
+  cleanup_work: true
+  qc: true
+  qc_root: null
+
+model:
+  name: sfcn_classifier
+  pretrained: true
+  pretrained_path: checkpoints/run_20190719_00_epoch_best_mae.p
+  num_classes: 3
+  dropout: true
+
+train:
+  train_recipe: daomuyang
+  split_style: github
+  github_preprocess_pipeline_version: "2026-06-06-v9_adni_n4_robustfov"
+  github_require_pipeline_version: false
+  min_subjects: 10
+  input_size: [160, 192, 160]
+  n_folds: 5
+  seed: 42
+  epochs: 100
+  batch_size: 4
+  num_workers: 0
+  optimizer: sgd
+  lr: 0.005
+  sgd_momentum: 0.9
+  weight_decay: 0.001
+  backbone_lr_scale: 0.1
+  head_lr_scale: 1.0
+  freeze_backbone_epochs: 8
+  label_smoothing: 0.05
+  use_class_weights: true
+  amp: false
+  val_interval: 1
+  checkpoint_metric: val_balanced_acc
+  early_stop_metric: val_balanced_acc
+  early_stop_patience: 15
+  early_stop_min_delta: 0.0
+  lr_decay_every: 30
+  lr_decay_factor: 0.5
+  scheduler: step
+  grad_clip_norm: 0.0
+  final_holdout_ratio: 0.2
+  run_final_after_cv: true
+  run_oof: false
+  log_csv: true
+  val_metrics: [acc, macro_f1, balanced_acc, loss]
+
+augment:
+  enabled: true
+  mode: sfcn_daomuyang
+  translate_voxels: 2
+  flip_lr: true
+  flip_lr_prob: 0.5
+  flip_lr_axis: 0
+
+swanlab:
+  enabled: false
+  project: PJ1
+  workspace: 23307110248JackyH
+  group: sfcn_v4-kfold
+  mode: cloud
+  log_oof: false
+
+outputs:
+  kfold_dir: outputs/ADNI/sfcn_v4/kfold
+  final_dir: outputs/ADNI/sfcn_v4/final
+
+infer:
+  use_tta: true

@@ -1,0 +1,18 @@
+# PJ1 GPU server (conda base 通常已含 torch / numpy)
+# 在现有 PyTorch 上追加，勿重装 torch，除非环境缺失。
+
+monai>=1.3.0
+nibabel>=5.0.0
+numpy>=1.24.0
+pandas>=2.0.0
+pyyaml>=6.0
+scipy>=1.10.0
+scikit-learn>=1.3.0
+tqdm>=4.65.0
+SimpleITK>=2.2.0
+matplotlib>=3.7.0
+swanlab>=0.5.0
+gdown>=5.0.0
+huggingface_hub>=0.20.0
+modelscope>=1.9.0
+# FSL 非 pip：python PJ1_UKB/scripts/setup_fsl_official.py

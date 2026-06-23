@@ -1,6 +1,15 @@
 # 课程原始数据（仓库外或本地专用）
 cn_project/
 
+# PJ1 大体积数据 / 权重 / 预处理（见 PJ1/.gitignore 与 ModelScope PJ_ADNI_UKB）
+PJ1/data/
+PJ1/PJ1_UKB/processed/
+PJ1/PJ1_UKB/checkpoints/
+PJ1/PJ1_UKB/outputs/
+PJ1/PJ1_ADNI/dataset/processed_rootstrap/
+PJ1/PJ1_ADNI/models/
+PJ1/PJ1_ADNI/outputs/
+
 # PJ2 大体积数据
 PJ2/data/
 PJ2/dataset/

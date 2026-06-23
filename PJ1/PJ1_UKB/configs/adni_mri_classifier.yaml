@@ -1,0 +1,64 @@
+# Rootstrap MRI-classifier (MONAI DenseNet121) on ADNI 105 cases.
+# Preprocess follows GitHub rootstrap/MRI-classifier (no separate paper):
+#   fslreorient2std -> flirt (MNI152 1mm) -> BET (f=0.4) -> N4
+# Train-time (online): ScaleIntensity -> Resize(96^3) -> RandRotate90 (train only)
+
+dataset: adni
+task: classification
+
+data:
+  csv: data/ADNI_data_105cases/ADNI_data/selected_ADNI_105_info.csv
+  processed_root: processed/ADNI_mri_classifier
+  id_column: eid
+  label_column: label
+  classes: [CN, MCI, AD]
+  exclude_ids: []
+  exclude_qc_flagged: false
+
+preprocess:
+  profile: mri_classifier
+  mni_mm: 1
+  bet_frac: 0.4
+  n4_iterations: [100, 100, 60, 40]
+  n4_shrink_factor: 3
+  n4_convergence_threshold: 0.0001
+  n4_bspline_fitting_distance: 300
+  cleanup_work: true
+
+model:
+  name: densenet121_3d
+  pretrained: true
+  pretrained_path: checkpoints/mri_classifier/86_acc_model.pth
+  num_classes: 3
+  # Original Rootstrap label order was AD=0,MCI=1,CN=2; PJ1 uses CN=0,MCI=1,AD=2
+  remap_pretrained_head: true
+
+train:
+  input_size: [96, 96, 96]
+  n_folds: 5
+  seed: 42
+  epochs: 100
+  batch_size: 2
+  num_workers: 2
+  lr: 0.0001
+  weight_decay: 0.0
+  use_class_weights: true
+  amp: true
+  val_interval: 2
+  checkpoint_metric: val_acc
+  run_oof: false
+  log_csv: true
+
+augment:
+  rand_rotate90: true
+
+swanlab:
+  enabled: false
+  project: PJ1
+  workspace: 23307110248JackyH
+  group: mri_classifier-kfold
+  mode: cloud
+  log_oof: false
+
+outputs:
+  kfold_dir: outputs/ADNI/mri_classifier/kfold

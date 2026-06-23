@@ -1,0 +1,82 @@
+dataset: ukb
+task: sfcn_age_sex
+
+data:
+  csv: null
+  raw_root: null
+  processed_root: processed/UKB_sfcn_new
+  id_column: eid
+  age_column: age
+  sex_column: sex
+  strict_preprocess_version: false
+  exclude_ids: []
+  exclude_qc_flagged: true
+  qc_flagged_path: processed/UKB_sfcn_new/qc/qc_flagged.json
+
+preprocess:
+  profile: sfcn_new
+  output_size: [160, 192, 160]
+  mni_mm: 1
+  n4: true
+  n4_fail_fast: false
+  resample_1mm: true
+  resample_spacing: 1.0
+  bet_frac: 0.5
+  bet_robust: true
+  bet_gradient_remove: true
+  flirt_cost: corratio
+  flirt_interp: trilinear
+  apply_mni_mask: false
+  zero_background: false
+  crop_mode: center_crop_pad
+  cleanup_work: true
+  qc: true
+  qc_root: null
+
+model:
+  name: sfcn
+  input_size: [160, 192, 160]
+
+train:
+  sfcn_task: both
+  # default weights: both -> age_best + sex_best; onlyage -> age_best; onlysex -> sex_best
+  sfcn_weights: default
+  age_weights_path: null
+  sex_weights_path: null
+  n_folds: 5
+  seed: 42
+  epochs: 60
+  batch_size: 4
+  num_workers: 4
+  lr: 0.00005
+  weight_decay: 0.0001
+  head_lr_scale: 2.0
+  backbone_lr_scale: 0.4
+  sex_loss_weight: 1.0
+  use_sex_class_weights: true
+  bias_correction: true
+  amp: false
+  freeze_backbone_epochs: 1
+  grad_clip_norm: 1.0
+  run_oof: true
+  log_csv: true
+  early_stop_patience: 20
+  early_stop_min_delta: 0.05
+
+augment:
+  enabled: true
+  mode: sfcn_paper
+  translate_voxels: 2
+  flip_lr: true
+  flip_lr_prob: 0.5
+
+swanlab:
+  enabled: true
+  force: true
+  overwrite: true
+  project: PJ1
+  workspace: 23307110248JackyH
+  experiment_name: null
+  group: null
+  mode: cloud
+  log_oof: true

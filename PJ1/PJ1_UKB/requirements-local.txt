@@ -1,0 +1,15 @@
+# WSL/本机：预处理 + 数据检查
+# N4 使用 SimpleITK（不依赖 monai/torch，避免误装 CUDA torch）
+SimpleITK>=2.2
+nibabel>=5.0
+numpy>=1.24
+pandas>=2.0
+pyyaml>=6.0
+scipy>=1.10
+matplotlib>=3.7
+# 本机可选：SwanLab 连通性测试 scripts/test_swanlab_connection.py
+swanlab>=0.5.0
+gdown>=5.0
+huggingface_hub>=0.20
+# MRI-classifier 预处理：默认 SimpleITK N4；装 nipype + 系统 ANTs 可消除 warning 并对齐 Rootstrap
+nipype>=1.8.6

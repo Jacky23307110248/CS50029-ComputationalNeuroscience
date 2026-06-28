@@ -17,9 +17,11 @@ from pipeline_registry import (
     processed_dir,
 )
 from test_io import (
+    csv_has_filled_labels,
     discover_adni_t1,
     discover_ukb_t1,
     find_csv,
+    normalize_subject_id,
     relative_path_map,
     resolve_adni_raw_root,
     resolve_id_label_columns,
@@ -81,7 +83,7 @@ def _preprocess_ukb_sfcn(raw_root: Path, proc_root: Path, name: str, jobs: int, 
 
     ukb_raw = resolve_ukb_raw_root(raw_root)
     df = pd.read_csv(csv_path)
-    ids = [str(row[id_col]) for _, row in df.iterrows()]
+    ids = [normalize_subject_id(row[id_col]) for _, row in df.iterrows()]
 
     fn = resolve_preprocess_fn(cfg)
     jobs_list = []
@@ -125,57 +127,92 @@ def _preprocess_adni_rootstrap(raw_root: Path, proc_root: Path, name: str) -> Pa
     _ensure_adni_path()
     from src.preprocess_rootstrap import build_adni_rootstrap_metadata
 
-    adni_raw = resolve_adni_raw_root(raw_root)
-    need_labels = bool(list(adni_raw.glob("*.csv")) or list(raw_root.glob("*.csv")))
+    raw_root = raw_root.resolve()
+    try:
+        csv_path = find_csv(raw_root)
+        require_labels = csv_has_filled_labels(csv_path, "label")
+    except FileNotFoundError:
+        require_labels = False
     build_adni_rootstrap_metadata(
-        raw_dir=adni_raw,
+        raw_dir=raw_root,
         processed_dir=proc_root,
-        require_labels=need_labels,
+        require_labels=require_labels,
         dataset_name=name,
     )
     print(f"[adni_rootstrap] -> {proc_root}")
     return proc_root
 
 
+def _run_adni_mri_classifier_one(args: tuple) -> tuple[str, str | None]:
+    sid, raw_path, out_path, pp, force = args
+    _ensure_ukb_path()
+    from src.mri_classifier.preprocess_one import preprocess_subject_mri_classifier
+    from src.preprocess.fsl_env import ensure_fsl_in_process
+
+    try:
+        ensure_fsl_in_process()
+        preprocess_subject_mri_classifier(
+            sid, Path(raw_path), Path(out_path), pp=pp, force=bool(force)
+        )
+        return sid, None
+    except Exception as exc:
+        return sid, str(exc)
+
+
+def _run_adni_sfcn_v4_one(args: tuple) -> tuple[str, str | None]:
+    sid, raw_path, out_path, pp, force = args
+    _ensure_ukb_path()
+    from src.adni_sfcn.preprocess_one import preprocess_subject_adni_sfcn
+    from src.preprocess.fsl_env import ensure_fsl_in_process
+
+    try:
+        ensure_fsl_in_process()
+        pp_job = dict(pp)
+        pp_job["case_dir"] = str(Path(raw_path).parent)
+        preprocess_subject_adni_sfcn(
+            sid, Path(raw_path), Path(out_path), pp=pp_job, force=bool(force)
+        )
+        return sid, None
+    except Exception as exc:
+        return sid, str(exc)
+
+
+def _load_adni_preprocess_records(csv_path: Path) -> list[dict]:
+    """Load ADNI subject list for preprocessing without importing training datasets."""
+    id_col, label_col = resolve_id_label_columns(csv_path)
+    df = pd.read_csv(csv_path)
+    records: list[dict] = []
+    for _, row in df.iterrows():
+        sid = normalize_subject_id(row[id_col])
+        if not sid:
+            continue
+        if label_col and label_col in df.columns:
+            label_raw = str(row[label_col]).strip()
+            label_name = label_raw.upper() if label_raw and label_raw.lower() != "nan" else "CN"
+        else:
+            label_name = "CN"
+        records.append({"id": sid, "label_name": label_name})
+    return records
+
+
 def _preprocess_adni_npz(raw_root: Path, proc_root: Path, pipeline: str, name: str, jobs: int, force: bool) -> Path:
     _ensure_ukb_path()
     from src.config import load_yaml
-    from src.datasets.adni import load_adni_records
-    from src.preprocess.fsl_env import ensure_fsl_in_process
 
     spec = get_spec(pipeline)
     cfg = load_yaml(spec.default_config)
     pp = dict(cfg.get("preprocess", {}))
     if pipeline == "adni_sfcn_v4":
         pp.setdefault("profile", "sfcn_new_v4")
-        from src.adni_sfcn.preprocess_one import preprocess_subject_adni_sfcn
         from src.preprocess.versioning import preprocess_config_hash
 
         version = preprocess_config_hash(pp)
-
-        def run_one(sid: str, raw_path: Path, out_path: Path) -> str | None:
-            try:
-                ensure_fsl_in_process()
-                case_dir = raw_path.parent
-                pp_job = dict(pp)
-                pp_job["case_dir"] = str(case_dir)
-                preprocess_subject_adni_sfcn(sid, raw_path, out_path, pp=pp_job, force=force)
-                return None
-            except Exception as exc:
-                return str(exc)
-
+        worker = _run_adni_sfcn_v4_one
     else:
-        from src.mri_classifier.preprocess_one import preprocess_config_hash, preprocess_subject_mri_classifier
+        from src.mri_classifier.preprocess_one import preprocess_config_hash
 
         version = preprocess_config_hash(pp)
-
-        def run_one(sid: str, raw_path: Path, out_path: Path) -> str | None:
-            try:
-                ensure_fsl_in_process()
-                preprocess_subject_mri_classifier(sid, raw_path, out_path, pp=pp, force=force)
-                return None
-            except Exception as exc:
-                return str(exc)
+        worker = _run_adni_mri_classifier_one
 
     csv_path = find_csv(raw_root)
     shutil.copy2(csv_path, proc_root / csv_path.name)
@@ -183,7 +220,7 @@ def _preprocess_adni_npz(raw_root: Path, proc_root: Path, pipeline: str, name: s
     id_col, _ = resolve_id_label_columns(csv_path)
     rel_map = relative_path_map(csv_path, id_col) if pp.get("use_csv_relative_path") else {}
 
-    records = load_adni_records(csv_path=csv_path)
+    records = _load_adni_preprocess_records(csv_path)
     task_jobs = []
     for rec in records:
         sid = rec["id"]
@@ -196,20 +233,20 @@ def _preprocess_adni_npz(raw_root: Path, proc_root: Path, pipeline: str, name: s
     failed: list[tuple[str, str]] = []
     if jobs <= 1:
         for sid, raw_path, out_path in task_jobs:
-            err = run_one(sid, raw_path, out_path)
+            _, err = worker((sid, str(raw_path), str(out_path), pp, force))
             if err:
                 failed.append((sid, err))
     else:
         with ProcessPoolExecutor(max_workers=jobs) as pool:
             futures = {
-                pool.submit(run_one, sid, raw_path, out_path): sid
+                pool.submit(worker, (sid, str(raw_path), str(out_path), pp, force)): sid
                 for sid, raw_path, out_path in task_jobs
             }
             for fut in as_completed(futures):
                 sid = futures[fut]
-                err = fut.result()
+                result_sid, err = fut.result()
                 if err:
-                    failed.append((sid, err))
+                    failed.append((result_sid, err))
 
     manifest_rows = []
     for rec in records:

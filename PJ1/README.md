@@ -6,7 +6,7 @@
 | **数据与权重（ModelScope）** | [sSzHox/PJ_ADNI_UKB](https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB) |
 
 - **GitHub**：`scripts/`、`PJ1_UKB/`、`PJ1_ADNI/` 下全部代码与配置  
-- **ModelScope**：`data/` 原始影像、`checkpoints/` 预训练、各线 `outputs/` 微调权重  
+- **ModelScope**：`data/` 训练集 + **官方 test20**、`checkpoints/` 预训练、各线 `outputs/` 微调权重  
 - **本地生成**：`processed/`、`dataset/processed_rootstrap/`（WSL + FSL 预处理，不在上述两处）
 
 首次使用（训练集复现）：
@@ -20,20 +20,51 @@ python scripts/download_modelscope.py
 
 ---
 
-## 官方测试集：放进 `data/` 之后怎么做
+## 官方测试集 test20
 
-把课程下发的测试包解压到 **`PJ1/data/<名称>/`**（结构与训练集类似：UKB 含 `image_T1_raw/` + CSV；ADNI 含按 ID 分文件夹的 NIfTI + `labels.csv` 或 `selected_*_info.csv`）。
+**ModelScope 已含**（与训练集同在 `data/` 下，路径与本地一致）：
 
-以下命令均在 **`PJ1/`** 根目录执行；`--name` 与 `--raw` 使用同一目录名（例如 `TEST_ADNI`）。
+```
+data/UKB_test20_release/UKB_test20_release/
+data/ADNI_test20_release/ADNI_test20_release/
+```
+
+仅拉 test20：`python scripts/download_modelscope.py --target test20`
+
+若从课程包解压，也放到 `PJ1/data/`，目录结构为：
+
+```
+data/UKB_test20_release/UKB_test20_release/
+  images/<eid>/T1.nii.gz
+  UKB_submission_template.csv      # eid,age,sex（空列待填）
+
+data/ADNI_test20_release/ADNI_test20_release/
+  images/<eid>/T1.nii(.gz)
+  ADNI_submission_template.csv     # eid,label（空列待填）
+```
+
+以下命令均在 **`PJ1/`** 根目录执行；`--name` 为预处理产物子目录名，`--raw` 指向 **release 内层目录**（含 `images/` 与 template CSV）。
 
 ### 阶段 A — 预处理（WSL，需 FSL）
 
-```bash
-# ADNI：四条预处理线一次跑完（Rootstrap + mri + sfcn + 共用 data）
-python scripts/preprocess_test.py --pipeline all --name TEST_ADNI --raw TEST_ADNI --jobs 4
+在 WSL 中进入项目并加载 FSL：
 
-# UKB：只跑 SFCN 一条
-python scripts/preprocess_test.py --pipeline ukb_sfcn --name TEST_UKB --raw TEST_UKB --jobs 8
+```bash
+cd /mnt/d/大三下/计算神经学/CS50029-ComputationalNeuroscience/PJ1
+export FSLDIR=/usr/local/fsl   # 按你的 FSL 安装路径修改
+source $FSLDIR/etc/fslconf/fsl.sh
+
+# UKB 官方 20 例：SFCN 预处理
+python scripts/preprocess_test.py --pipeline ukb_sfcn \
+  --name UKB_test20 \
+  --raw UKB_test20_release/UKB_test20_release \
+  --jobs 4
+
+# ADNI 官方 20 例：四条预处理线一次跑完
+python scripts/preprocess_test.py --pipeline all \
+  --name ADNI_test20 \
+  --raw ADNI_test20_release/ADNI_test20_release \
+  --jobs 4
 ```
 
 预处理产物位置：
@@ -48,24 +79,29 @@ python scripts/preprocess_test.py --pipeline ukb_sfcn --name TEST_UKB --raw TEST
 ### 阶段 B — 推理 / 评测（GPU）
 
 ```bash
-# 六任务全开：UKB(both/onlyage/onlysex) + ADNI 三线
-python scripts/eval_test.py --pipeline all --name TEST_ADNI --raw TEST_ADNI
+# UKB 提交：务必 --task both，会自动填 UKB_submission_*_filled.csv
+python scripts/eval_test.py --pipeline ukb_sfcn --task both \
+  --name UKB_test20 --raw UKB_test20_release/UKB_test20_release
 
-# 单跑示例
-python scripts/eval_test.py --pipeline ukb_sfcn --task both --name TEST_UKB --raw TEST_UKB
-python scripts/eval_test.py --pipeline adni_rootstrap --name TEST_ADNI --raw TEST_ADNI
+# ADNI 主结果线 + 探索线（有 GPU 时）
+python scripts/eval_test.py --pipeline adni_rootstrap \
+  --name ADNI_test20 --raw ADNI_test20_release/ADNI_test20_release
+
+# 六任务全开
+python scripts/eval_test.py --pipeline all \
+  --name ADNI_test20 --raw ADNI_test20_release/ADNI_test20_release
 ```
 
 ### 结果在哪看
 
 | 任务 | 提交文件 | 有标签时的指标 |
 |------|----------|----------------|
-| UKB `both` / `onlyage` / `onlysex` | `PJ1_UKB/outputs/test/<name>/ukb_sfcn_<task>/pred.csv` | 同目录 `test_metrics.json`（MAE / sex acc） |
-| ADNI Rootstrap ⭐ | `PJ1_ADNI/outputs/test/<name>/adni_rootstrap/pred.csv` | `test_metrics.json` |
-| ADNI mri_classifier | `PJ1_UKB/outputs/test/<name>/adni_mri_classifier/pred.csv` | `test_metrics.json` |
-| ADNI sfcn_v4 | `PJ1_UKB/outputs/test/<name>/adni_sfcn_v4/pred.csv` | `test_metrics.json` |
+| UKB `both` | `PJ1_UKB/outputs/test/<name>/ukb_sfcn_both/pred.csv` + `UKB_submission_*_filled.csv` | 同目录 `test_metrics.json` |
+| ADNI Rootstrap ⭐ | `PJ1_ADNI/outputs/test/<name>/adni_rootstrap/pred.csv` + `ADNI_submission_*_filled.csv` | `test_metrics.json` |
+| ADNI mri_classifier | `PJ1_UKB/outputs/test/<name>/adni_mri_classifier/` | `test_metrics.json` |
+| ADNI sfcn_v4 | `PJ1_UKB/outputs/test/<name>/adni_sfcn_v4/` | `test_metrics.json` |
 
-ADNI 提交列：`ID,Pre`（`CN` / `MCI` / `AD`）。UKB：`ID,Age` 和/或 `ID,Sex`（由 `--task` 决定）。
+官方测试集 CSV 中 age/sex/label 为空时，脚本只做推理并填写 submission template，不计算指标。
 
 默认使用已训练好的最优权重（见 ModelScope `outputs/`）；可 `--checkpoint-dir` 覆盖。
 

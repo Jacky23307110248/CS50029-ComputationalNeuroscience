@@ -2,6 +2,8 @@
 
 **大文件**：[sSzHox/PJ_ADNI_UKB](https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB) · 下载：`python scripts/download_modelscope.py`（在 `PJ1/` 根目录）
 
+含训练集与 **官方 test20**（`data/*_test20_release/`）。仅 test20：`python scripts/download_modelscope.py --target test20`
+
 官方测试集放出后，将原始数据放入 `PJ1/data/<测试集名>/`，用本目录脚本完成**预处理（WSL）**与**评测（GPU）**两阶段。
 
 ## 四条预处理线 + UKB 三任务

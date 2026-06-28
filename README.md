@@ -19,7 +19,7 @@
 | 代码（GitHub） | [tree/main/PJ1](https://github.com/Jacky23307110248/CS50029-ComputationalNeuroscience/tree/main/PJ1) |
 | 数据与权重（ModelScope） | [sSzHox/PJ_ADNI_UKB](https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB) |
 
-**测试集**：原始包放入 `PJ1/data/<名称>/` → `python scripts/preprocess_test.py`（WSL）→ `python scripts/eval_test.py`（GPU）→ 结果在 `PJ1_UKB/outputs/test/`、`PJ1_ADNI/outputs/test/`。
+**测试集**：ModelScope 含 `data/*_test20_release/`（`python scripts/download_modelscope.py --target test20`）；或课程包放入 `PJ1/data/` → `preprocess_test.py`（WSL）→ `eval_test.py`（GPU）→ 结果在 `outputs/test/`。
 
 ### PJ2
 

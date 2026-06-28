@@ -41,19 +41,30 @@ def load_ukb_records(
     age_column: str = "age",
     sex_column: str = "sex",
     subject_ids: list[str] | None = None,
+    inference_only: bool | None = None,
 ) -> list[dict]:
     csv_path = csv_path or UKB_CSV
     df = read_subject_table(csv_path, id_column)
     if subject_ids is not None:
         subject_ids = {str(s) for s in subject_ids}
         df = df[df[id_column].astype(str).isin(subject_ids)]
+    if inference_only is None:
+        age_ok = df[age_column].apply(lambda v: str(v).strip() not in ("", "nan", "NaN"))
+        sex_ok = df[sex_column].apply(lambda v: str(v).strip() not in ("", "nan", "NaN"))
+        inference_only = not (age_ok.any() and sex_ok.any())
     records = []
     for _, row in df.iterrows():
+        if inference_only:
+            age_val = 0.0
+            sex_val = 0
+        else:
+            age_val = float(row[age_column])
+            sex_val = int(float(row[sex_column]))
         records.append(
             {
                 "id": str(row[id_column]),
-                "age": float(row[age_column]),
-                "sex": int(float(row[sex_column])),
+                "age": age_val,
+                "sex": sex_val,
             }
         )
     return records

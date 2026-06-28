@@ -65,6 +65,11 @@ def pick_column(columns, candidates):
 
 def case_dirs(raw_dir=UKB_RAW_DIR):
     raw_path = Path(raw_dir)
+    images_root = raw_path / "images"
+    if images_root.is_dir():
+        subs = sorted([p for p in images_root.iterdir() if p.is_dir()], key=lambda p: p.name)
+        if subs:
+            return subs
     return sorted([p for p in raw_path.iterdir() if p.is_dir()], key=lambda p: p.name)
 
 def find_input_image(case_dir):

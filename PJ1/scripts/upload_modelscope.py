@@ -2,12 +2,15 @@
 """Upload PJ1 artifacts excluded by .gitignore to ModelScope dataset.
 
 Targets mirror repo layout under PJ1/:
-  - data/                          raw UKB + ADNI
-  - PJ1_UKB/checkpoints/           public pretrained weights
-  - PJ1_UKB/outputs/UKB/sfcn/...   UKB SFCN finetuned (3 tasks)
-  - PJ1_UKB/outputs/ADNI/...       ADNI mri_classifier + sfcn_v4
-  - PJ1_ADNI/models/               Rootstrap pretrained (86_acc_model.pth)
-  - PJ1_ADNI/outputs/...           Rootstrap finetuned (15 checkpoints)
+  - data/UKB_T1_100cases/          UKB 训练集
+  - data/ADNI_data_105cases/       ADNI 训练集
+  - data/UKB_test20_release/     官方 UKB test20（images + template CSV）
+  - data/ADNI_test20_release/    官方 ADNI test20（images + template CSV）
+  - PJ1_UKB/checkpoints/         public pretrained weights
+  - PJ1_UKB/outputs/UKB/sfcn/... UKB SFCN finetuned (3 tasks)
+  - PJ1_UKB/outputs/ADNI/...     ADNI mri_classifier + sfcn_v4
+  - PJ1_ADNI/models/             Rootstrap pretrained (86_acc_model.pth)
+  - PJ1_ADNI/outputs/...         Rootstrap finetuned (15 checkpoints)
 
 Dataset: https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB
 
@@ -30,7 +33,10 @@ DEFAULT_REPO_ID = "sSzHox/PJ_ADNI_UKB"
 
 # (local path relative to PJ1/, remote path in dataset repo)
 UPLOAD_TARGETS: tuple[tuple[str, str], ...] = (
-    ("data", "data"),
+    ("data/UKB_T1_100cases", "data/UKB_T1_100cases"),
+    ("data/ADNI_data_105cases", "data/ADNI_data_105cases"),
+    ("data/UKB_test20_release", "data/UKB_test20_release"),
+    ("data/ADNI_test20_release", "data/ADNI_test20_release"),
     ("PJ1_UKB/checkpoints", "PJ1_UKB/checkpoints"),
     (
         "PJ1_UKB/outputs/UKB/sfcn/20260606_120652_onlyage",
@@ -92,14 +98,27 @@ def main() -> None:
         help="Commit message prefix for each folder upload",
     )
     parser.add_argument(
+        "--only",
+        nargs="+",
+        metavar="PREFIX",
+        help="Upload subset only (match local path prefix, e.g. data/UKB_test20_release)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="List local folders only; do not upload",
     )
     args = parser.parse_args()
 
+    targets = UPLOAD_TARGETS
+    if args.only:
+        prefixes = tuple(args.only)
+        targets = tuple(t for t in UPLOAD_TARGETS if t[0].startswith(prefixes) or t[0] in prefixes)
+        if not targets:
+            raise SystemExit(f"No upload targets match --only {args.only}")
+
     planned: list[tuple[Path, str, int]] = []
-    for local_rel, remote_rel in UPLOAD_TARGETS:
+    for local_rel, remote_rel in targets:
         local_path = ROOT / local_rel
         n_files = count_files(local_path)
         if n_files == 0:

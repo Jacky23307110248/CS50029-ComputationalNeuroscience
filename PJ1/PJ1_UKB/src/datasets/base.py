@@ -107,11 +107,26 @@ class BaseBrainDataset(Dataset, ABC):
         return out
 
 
+def _normalize_subject_id(value) -> str:
+    if pd.isna(value):
+        return ""
+    if isinstance(value, float) and value == int(value):
+        return str(int(value))
+    if isinstance(value, int):
+        return str(value)
+    text = str(value).strip()
+    if text.endswith(".0"):
+        stem = text[:-2]
+        if stem.isdigit():
+            return stem
+    return text
+
+
 def read_subject_table(csv_path: Path, id_column: str) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     if id_column not in df.columns:
         raise KeyError(f"Column '{id_column}' not in {csv_path}: {list(df.columns)}")
-    df[id_column] = df[id_column].astype(str)
+    df[id_column] = df[id_column].map(_normalize_subject_id)
     return df
 
 

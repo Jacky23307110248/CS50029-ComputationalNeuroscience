@@ -56,6 +56,7 @@ def load_adni_records(
     age_column: str = "age",
     sex_column: str = "sex",
     subject_ids: list[str] | None = None,
+    inference_only: bool | None = None,
 ) -> list[dict]:
     csv_path = csv_path or resolve_adni_csv()
     if not csv_path.exists():
@@ -76,16 +77,29 @@ def load_adni_records(
     if subject_ids is not None:
         subject_ids = {str(s) for s in subject_ids}
         df = df[df[id_column].astype(str).isin(subject_ids)]
+    if inference_only is None:
+        if label_column in df.columns:
+            filled = df[label_column].astype(str).str.strip()
+            inference_only = not ((filled != "") & (filled.str.lower() != "nan")).any()
+        else:
+            inference_only = True
     records = []
     for _, row in df.iterrows():
-        name = str(row[label_column]).strip().upper()
-        if name not in CLASS_TO_IDX:
-            raise ValueError(f"Unknown ADNI label '{name}', expected one of {ADNI_CLASSES}")
-        rec = {
-            "id": str(row[id_column]),
-            "label_name": name,
-            "label_idx": CLASS_TO_IDX[name],
-        }
+        if inference_only:
+            rec = {
+                "id": str(row[id_column]),
+                "label_name": "CN",
+                "label_idx": CLASS_TO_IDX["CN"],
+            }
+        else:
+            name = str(row[label_column]).strip().upper()
+            if name not in CLASS_TO_IDX:
+                raise ValueError(f"Unknown ADNI label '{name}', expected one of {ADNI_CLASSES}")
+            rec = {
+                "id": str(row[id_column]),
+                "label_name": name,
+                "label_idx": CLASS_TO_IDX[name],
+            }
         if age_column in cols and sex_column in cols:
             rec["age"] = float(row[age_column])
             rec["sex"] = parse_adni_sex(row[sex_column])

@@ -47,7 +47,13 @@ Example:
     parser.add_argument(
         "--raw",
         default=None,
-        help="Original test folder name/path for label lookup (optional if labels in processed CSV)",
+        help="Original test folder name/path for label lookup and submission template (optional)",
+    )
+    parser.add_argument(
+        "--template",
+        type=Path,
+        default=None,
+        help="Submission template CSV (default: auto-find *submission*template* under --raw)",
     )
     parser.add_argument(
         "--checkpoint-dir",
@@ -78,6 +84,7 @@ Example:
                 checkpoint_dir=ckpt,
                 device=args.device,
                 raw=args.raw,
+                template=args.template,
             )
             print(f"OK: {out}")
         except Exception as exc:

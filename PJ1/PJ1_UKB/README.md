@@ -12,7 +12,7 @@ CS50029 计算神经学课程项目。本子目录包含 **UKB SFCN** 与 **ADNI
 | GitHub | [PJ1/PJ1_UKB](https://github.com/Jacky23307110248/CS50029-ComputationalNeuroscience/tree/main/PJ1/PJ1_UKB) | `configs/`、`scripts/`、`src/`、`tests/` | 配置、训练/推理/预处理脚本、核心库 |
 | GitHub | 同上 | `README.md`、`requirements-*.txt` | 文档与依赖清单 |
 | GitHub | 同上 | `scripts/download_*.py` 等 | 从 HuggingFace / GitHub 拉**公开预训练**的脚本（权重本体在 ModelScope 已有一份） |
-| ModelScope | [PJ_ADNI_UKB](https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB) | `data/UKB_T1_100cases/`、`data/ADNI_data_105cases/` | 共享原始 NIfTI + CSV（与 `PJ1_ADNI` 共用 `data/`） |
+| ModelScope | [PJ_ADNI_UKB](https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB) | `data/UKB_T1_100cases/`、`data/ADNI_data_105cases/`、`data/*_test20_release/` | 共享原始 NIfTI + CSV（与 `PJ1_ADNI` 共用 `data/`） |
 | ModelScope | 同上 | `PJ1_UKB/checkpoints/` | SFCN 与 mri_classifier **预训练**权重 |
 | ModelScope | 同上 | `PJ1_UKB/outputs/UKB/sfcn/20260606_*` | UKB 三任务微调结果（`both` / `onlyage` / `onlysex`） |
 | ModelScope | 同上 | `PJ1_UKB/outputs/ADNI/mri_classifier/` | ADNI DenseNet121 五折 ckpt + 摘要 |

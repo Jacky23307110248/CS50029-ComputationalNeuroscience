@@ -13,7 +13,7 @@
 |------|------|---------------------|------|
 | GitHub | [PJ1/PJ1_ADNI](https://github.com/Jacky23307110248/CS50029-ComputationalNeuroscience/tree/main/PJ1/PJ1_ADNI) | `configs/`、`scripts/`、`src/`、`tests/` | 配置、训练/推理/预处理脚本、核心库 |
 | GitHub | 同上 | `README.md`、`PJ1_计算神经学.md`、`requirements*.txt` | 文档与依赖 |
-| ModelScope | [PJ_ADNI_UKB](https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB) | `data/ADNI_data_105cases/` | 原始 NIfTI + CSV（与 `PJ1_UKB` 共用 `data/`） |
+| ModelScope | [PJ_ADNI_UKB](https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB) | `data/ADNI_data_105cases/`、`data/*_test20_release/` | 原始 NIfTI + CSV（与 `PJ1_UKB` 共用 `data/`） |
 | ModelScope | 同上 | `PJ1_ADNI/models/` | Rootstrap 预训练 `86_acc_model.pth` |
 | ModelScope | 同上 | `PJ1_ADNI/outputs/rootstrap_adni_finetune_data_aug_seed3/` | **15 个**微调 ckpt + `metrics.json` / `pred.csv` 等 |
 | 本地生成 | WSL + FSL | `PJ1_ADNI/dataset/processed_rootstrap/` | 由 `scripts/preprocess.py` 从 `data/` 生成，**不上传** GitHub / ModelScope |

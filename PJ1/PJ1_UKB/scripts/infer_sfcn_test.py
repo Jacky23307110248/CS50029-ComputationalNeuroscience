@@ -14,6 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
@@ -23,52 +24,81 @@ sys.path.insert(0, str(ROOT))
 
 from src.datasets.ukb import load_ukb_records
 from src.datasets.ukb_sfcn import build_ukb_sfcn_dataset
-from src.models.sfcn import SFCNDual
+from src.models.sfcn import SFCN, SFCNDual, build_age_sfcn, build_sex_sfcn
+from src.models.sfcn_utils import log_probs_to_age
 from src.paths import UKB_SFCN_NEW_PROCESSED_ROOT
+from src.train.sfcn_mode import normalize_sfcn_task
 
 
-def load_sfcn_checkpoint(ckpt_path: Path, device: torch.device):
-    """Load SFCN dual checkpoint. Returns (model, age_meta, bias_coef)."""
+def _resolve_task(payload: dict, task: str | None) -> str:
+    if task is not None:
+        return normalize_sfcn_task({"train": {"sfcn_task": task}})
+    cfg = payload.get("cfg", {})
+    return normalize_sfcn_task(cfg if isinstance(cfg, dict) else {"train": {"sfcn_task": task or "both"}})
+
+
+def load_sfcn_checkpoint(ckpt_path: Path, device: torch.device, task: str | None = None):
+    """Load SFCN checkpoint for both / onlyage / onlysex."""
     payload = torch.load(ckpt_path, map_location=device, weights_only=False)
-    model = SFCNDual().to(device)
+    resolved = _resolve_task(payload, task)
+    if resolved == "both":
+        model = SFCNDual()
+    elif resolved == "onlyage":
+        model = build_age_sfcn()
+    else:
+        model = build_sex_sfcn()
     model.load_state_dict(payload["model_state"])
-    model.eval()
+    model.to(device).eval()
     age_meta = payload.get("age_state_meta", {})
     bias_coef = payload.get("bias_correction")
-    return model, age_meta, bias_coef
+    return model, age_meta, bias_coef, resolved
+
+
+def _batch_ids(batch) -> list[str]:
+    ids = batch["id"]
+    if isinstance(ids, (list, tuple)):
+        return [str(x) for x in ids]
+    return [str(ids)]
 
 
 @torch.no_grad()
-def predict_sfcn_loader(model, loader, device, age_meta=None, bias_coef=None):
+def predict_sfcn_loader(model, loader, device, age_meta=None, bias_coef=None, task: str = "both"):
     rows = []
+    task = normalize_sfcn_task({"train": {"sfcn_task": task}})
     for batch in loader:
         x = batch["image"].to(device)
-        age_raw, sex_raw = model(x)
+        ids = _batch_ids(batch)
+        n = x.size(0)
 
-        # SFCN age net outputs log_softmax, output_dim=1, so exp → raw age
-        age_vals = torch.exp(age_raw).squeeze(-1).cpu().numpy()
-        sex_vals = sex_raw.argmax(dim=-1).cpu().numpy()
+        if isinstance(model, SFCNDual):
+            age_raw, sex_raw = model(x)
+            age_vals = log_probs_to_age(age_raw, device).detach().cpu().numpy()
+            sex_vals = sex_raw.argmax(dim=-1).detach().cpu().numpy()
+        elif task == "onlyage":
+            age_raw = model(x)
+            age_vals = log_probs_to_age(age_raw, device).detach().cpu().numpy()
+            sex_vals = np.full(n, np.nan)
+        else:
+            sex_raw = model(x)
+            age_vals = np.full(n, np.nan)
+            sex_vals = sex_raw.argmax(dim=-1).detach().cpu().numpy()
 
-        ids = batch["id"]
-        if not isinstance(ids, (list, tuple)):
-            ids = [ids]
-
-        for i in range(x.size(0)):
+        for i in range(n):
             sid = ids[i] if i < len(ids) else str(i)
-            age = float(age_vals[i])
-
-            if age_meta:
-                mean = age_meta.get("age_mean", 0.0)
-                std = age_meta.get("age_std", 1.0)
-                age = age * std + mean
-
-            row = {"ID": str(sid), "Age": round(age, 1), "Sex": int(sex_vals[i])}
-
-            if bias_coef:
-                slope = bias_coef.get("slope", 1.0)
-                intercept = bias_coef.get("intercept", 0.0)
-                row["Age_bc"] = round(age * slope + intercept, 1)
-
+            row: dict = {"ID": sid}
+            if not np.isnan(float(age_vals[i])):
+                age = float(age_vals[i])
+                if age_meta:
+                    mean = age_meta.get("age_mean", 0.0)
+                    std = age_meta.get("age_std", 1.0)
+                    age = age * std + mean
+                row["Age"] = round(age, 1)
+                if bias_coef:
+                    slope = bias_coef.get("slope", 1.0)
+                    intercept = bias_coef.get("intercept", 0.0)
+                    row["Age_bc"] = round(age * slope + intercept, 1)
+            if not np.isnan(float(sex_vals[i])):
+                row["Sex"] = int(sex_vals[i])
             rows.append(row)
     return pd.DataFrame(rows)
 
@@ -79,6 +109,7 @@ def main():
     parser.add_argument("--processed_root", type=str, default=str(UKB_SFCN_NEW_PROCESSED_ROOT))
     parser.add_argument("--ids_csv", type=str, required=True)
     parser.add_argument("--output", type=str, required=True)
+    parser.add_argument("--task", default="both", choices=["both", "onlyage", "onlysex"])
     parser.add_argument("--n_folds", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--device", default="cpu")
@@ -89,7 +120,7 @@ def main():
 
     test_records = load_ukb_records(Path(args.ids_csv))
     proc_root = Path(args.processed_root)
-    ds = build_ukb_sfcn_dataset(test_records, proc_root, augment=False, train_labels=False)
+    ds = build_ukb_sfcn_dataset(test_records, proc_root, augment=False)
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     print(f"Device: {device}  |  Subjects: {len(test_records)}")
@@ -101,36 +132,40 @@ def main():
             print(f"  Skip fold_{fold}: missing")
             continue
 
-        model, age_meta, bias_coef = load_sfcn_checkpoint(ckpt, device)
-        df = predict_sfcn_loader(model, loader, device, age_meta, bias_coef)
+        model, age_meta, bias_coef, task = load_sfcn_checkpoint(ckpt, device, args.task)
+        df = predict_sfcn_loader(model, loader, device, age_meta, bias_coef, task=task)
 
         df = df.rename(columns={"Age": f"Age_{fold}", "Sex": f"Sex_{fold}"})
         if "Age_bc" in df.columns:
             df = df.rename(columns={"Age_bc": f"Age_bc_{fold}"})
         fold_dfs.append(df)
-        print(f"  fold_{fold}: {len(df)} preds  age_range=[{df[f'Age_{fold}'].min():.1f}, {df[f'Age_{fold}'].max():.1f}]")
+        if f"Age_{fold}" in df.columns:
+            print(f"  fold_{fold}: {len(df)} preds  age_range=[{df[f'Age_{fold}'].min():.1f}, {df[f'Age_{fold}'].max():.1f}]")
+        else:
+            print(f"  fold_{fold}: {len(df)} preds")
 
     if not fold_dfs:
         print("No checkpoints found!")
         return 1
 
-    # Ensemble
     merged = fold_dfs[0][["ID"]].copy()
     for fi, df in enumerate(fold_dfs):
-        merged[f"Age_{fi}"] = df[f"Age_{fi}"]
-        merged[f"Sex_{fi}"] = df[f"Sex_{fi}"]
+        if f"Age_{fi}" in df.columns:
+            merged[f"Age_{fi}"] = df[f"Age_{fi}"]
+        if f"Sex_{fi}" in df.columns:
+            merged[f"Sex_{fi}"] = df[f"Sex_{fi}"]
 
-    age_cols = [f"Age_{f}" for f in range(len(fold_dfs))]
-    sex_cols = [f"Sex_{f}" for f in range(len(fold_dfs))]
-
-    out = pd.DataFrame()
-    out["ID"] = merged["ID"]
-    out["Age"] = merged[age_cols].mean(axis=1).round(1)
-    sex_mode = merged[sex_cols].mode(axis=1)
-    out["Sex"] = sex_mode[0].astype(int)
-    ties = sex_mode[0].isna()
-    if ties.any():
-        out.loc[ties, "Sex"] = merged.loc[ties, sex_cols[0]].astype(int)
+    out = pd.DataFrame({"ID": merged["ID"]})
+    age_cols = [c for c in merged.columns if c.startswith("Age_")]
+    sex_cols = [c for c in merged.columns if c.startswith("Sex_")]
+    if age_cols:
+        out["Age"] = merged[age_cols].mean(axis=1).round(1)
+    if sex_cols:
+        sex_mode = merged[sex_cols].mode(axis=1)
+        out["Sex"] = sex_mode[0].astype(int)
+        ties = sex_mode[0].isna()
+        if ties.any():
+            out.loc[ties, "Sex"] = merged.loc[ties, sex_cols[0]].astype(int)
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)

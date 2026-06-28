@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -20,7 +21,18 @@ from pipeline_registry import (
     get_spec,
     processed_dir,
 )
-from test_io import find_csv, find_labels_csv, load_label_map, resolve_id_label_columns, resolve_raw_input
+from test_io import (
+    csv_has_filled_labels,
+    csv_has_filled_ukb_targets,
+    fill_adni_submission,
+    fill_ukb_submission,
+    find_csv,
+    find_labels_csv,
+    find_submission_template,
+    load_label_map,
+    resolve_id_label_columns,
+    resolve_raw_input,
+)
 
 
 def _ensure_ukb_path() -> None:
@@ -33,6 +45,27 @@ def _ensure_adni_path() -> None:
         sys.path.insert(0, str(ADNI_ROOT))
 
 
+def _load_adni_eval_module():
+    path = ADNI_ROOT / "scripts" / "eval_test.py"
+    spec = importlib.util.spec_from_file_location("pj1_adni_eval_test", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load ADNI eval module from {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _resolve_template(raw: str | Path | None, template: str | Path | None) -> Path | None:
+    if template is not None:
+        path = Path(template)
+        if not path.is_file():
+            raise FileNotFoundError(f"Submission template not found: {path}")
+        return path
+    if raw is None:
+        return None
+    return find_submission_template(resolve_raw_input(raw))
+
+
 def eval_job(
     pipeline: str,
     name: str,
@@ -40,16 +73,17 @@ def eval_job(
     checkpoint_dir: Path | None = None,
     device: str = "auto",
     raw: str | Path | None = None,
+    template: str | Path | None = None,
 ) -> Path:
     if pipeline == "ukb_sfcn":
         assert task is not None
-        return _eval_ukb_sfcn(name, task, checkpoint_dir, device, raw)
+        return _eval_ukb_sfcn(name, task, checkpoint_dir, device, raw, template)
     if pipeline == "adni_rootstrap":
-        return _eval_adni_rootstrap(name, checkpoint_dir, device, raw)
+        return _eval_adni_rootstrap(name, checkpoint_dir, device, raw, template)
     if pipeline == "adni_mri_classifier":
-        return _eval_adni_mri_classifier(name, checkpoint_dir, device, raw)
+        return _eval_adni_mri_classifier(name, checkpoint_dir, device, raw, template)
     if pipeline == "adni_sfcn_v4":
-        return _eval_adni_sfcn_v4(name, checkpoint_dir, device, raw)
+        return _eval_adni_sfcn_v4(name, checkpoint_dir, device, raw, template)
     raise ValueError(pipeline)
 
 
@@ -65,6 +99,7 @@ def _eval_ukb_sfcn(
     checkpoint_dir: Path | None,
     device: str,
     raw: str | Path | None,
+    template: str | Path | None,
 ) -> Path:
     _ensure_ukb_path()
     from scripts.infer_sfcn_test import load_sfcn_checkpoint, predict_sfcn_loader
@@ -87,7 +122,7 @@ def _eval_ukb_sfcn(
 
     dev = _resolve_device(device)
     records = load_ukb_records(csv_path)
-    ds = build_ukb_sfcn_dataset(records, proc_root, augment=False, train_labels=False)
+    ds = build_ukb_sfcn_dataset(records, proc_root, augment=False)
     loader = DataLoader(ds, batch_size=8, shuffle=False, num_workers=0)
 
     fold_dfs = []
@@ -95,9 +130,14 @@ def _eval_ukb_sfcn(
         ckpt = kfold_dir / f"fold_{fold}" / "best.pt"
         if not ckpt.exists():
             continue
-        model, age_meta, bias_coef = load_sfcn_checkpoint(ckpt, dev)
-        df = predict_sfcn_loader(model, loader, dev, age_meta, bias_coef)
-        df = df.rename(columns={"Age": f"Age_{fold}", "Sex": f"Sex_{fold}"})
+        model, age_meta, bias_coef, _ = load_sfcn_checkpoint(ckpt, dev, task=task)
+        df = predict_sfcn_loader(model, loader, dev, age_meta, bias_coef, task=task)
+        rename = {}
+        if "Age" in df.columns:
+            rename["Age"] = f"Age_{fold}"
+        if "Sex" in df.columns:
+            rename["Sex"] = f"Sex_{fold}"
+        df = df.rename(columns=rename)
         fold_dfs.append(df)
 
     if not fold_dfs:
@@ -105,18 +145,22 @@ def _eval_ukb_sfcn(
 
     merged = fold_dfs[0][["ID"]].copy()
     for fi, df in enumerate(fold_dfs):
-        merged[f"Age_{fi}"] = df[f"Age_{fi}"]
-        merged[f"Sex_{fi}"] = df[f"Sex_{fi}"]
+        if f"Age_{fi}" in df.columns:
+            merged[f"Age_{fi}"] = df[f"Age_{fi}"]
+        if f"Sex_{fi}" in df.columns:
+            merged[f"Sex_{fi}"] = df[f"Sex_{fi}"]
 
-    age_cols = [f"Age_{f}" for f in range(len(fold_dfs))]
-    sex_cols = [f"Sex_{f}" for f in range(len(fold_dfs))]
+    age_cols = [c for c in merged.columns if c.startswith("Age_")]
+    sex_cols = [c for c in merged.columns if c.startswith("Sex_")]
     out = pd.DataFrame({"ID": merged["ID"]})
-    out["Age"] = merged[age_cols].mean(axis=1).round(1)
-    sex_mode = merged[sex_cols].mode(axis=1)
-    out["Sex"] = sex_mode[0].astype(int)
-    ties = sex_mode[0].isna()
-    if ties.any():
-        out.loc[ties, "Sex"] = merged.loc[ties, sex_cols[0]].astype(int)
+    if age_cols:
+        out["Age"] = merged[age_cols].mean(axis=1).round(1)
+    if sex_cols:
+        sex_mode = merged[sex_cols].mode(axis=1)
+        out["Sex"] = sex_mode[0].astype(int)
+        ties = sex_mode[0].isna()
+        if ties.any():
+            out.loc[ties, "Sex"] = merged.loc[ties, sex_cols[0]].astype(int)
 
     out_dir = eval_output_dir("ukb_sfcn", name, task)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -124,29 +168,55 @@ def _eval_ukb_sfcn(
     out[submit_cols].to_csv(out_dir / "pred.csv", index=False)
     out.to_csv(out_dir / "pred_full.csv", index=False)
 
-    gt = pd.read_csv(csv_path)
-    id_col = "eid" if "eid" in gt.columns else "ID"
-    eval_df = out.merge(gt[[id_col, "age", "sex"]], left_on="ID", right_on=id_col, how="inner")
-    metrics = {"pipeline": "ukb_sfcn", "task": task, "n": len(eval_df)}
-    if len(eval_df):
-        metrics["age_mae"] = float(mean_absolute_error(eval_df["age"], eval_df["Age"]))
-        metrics["sex_acc"] = float(accuracy_score(eval_df["sex"].astype(int), eval_df["Sex"].astype(int)))
-    with open(out_dir / "test_metrics.json", "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2)
+    tpl = _resolve_template(raw, template)
+    if tpl is not None:
+        sub_name = tpl.name.replace("template", f"filled_{task}")
+        sub_path = fill_ukb_submission(
+            tpl,
+            out,
+            out_dir / sub_name,
+            fill_age=task in ("onlyage", "both"),
+            fill_sex=task in ("onlysex", "both"),
+        )
+        print(f"  submission -> {sub_path}")
 
-    print(f"[ukb_sfcn/{task}] n={metrics.get('n', 0)} mae={metrics.get('age_mae', 'n/a')} sex_acc={metrics.get('sex_acc', 'n/a')}")
+    if csv_has_filled_ukb_targets(csv_path):
+        gt = pd.read_csv(csv_path)
+        id_col = "eid" if "eid" in gt.columns else "ID"
+        eval_df = out.merge(gt[[id_col, "age", "sex"]], left_on="ID", right_on=id_col, how="inner")
+        metrics = {"pipeline": "ukb_sfcn", "task": task, "n": len(eval_df)}
+        if len(eval_df):
+            metrics["age_mae"] = float(mean_absolute_error(eval_df["age"], eval_df["Age"]))
+            metrics["sex_acc"] = float(accuracy_score(eval_df["sex"].astype(int), eval_df["Sex"].astype(int)))
+        with open(out_dir / "test_metrics.json", "w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2)
+        print(
+            f"[ukb_sfcn/{task}] n={metrics.get('n', 0)} "
+            f"mae={metrics.get('age_mae', 'n/a')} sex_acc={metrics.get('sex_acc', 'n/a')}"
+        )
+    else:
+        print(f"[ukb_sfcn/{task}] inference-only (no ground-truth age/sex in CSV)")
     print(f"  -> {out_dir / 'pred.csv'}")
     return out_dir
 
 
-def _eval_adni_rootstrap(name: str, checkpoint_dir: Path | None, device: str, raw: str | Path | None) -> Path:
+def _eval_adni_rootstrap(
+    name: str,
+    checkpoint_dir: Path | None,
+    device: str,
+    raw: str | Path | None,
+    template: str | Path | None,
+) -> Path:
     _ensure_adni_path()
     from src.metrics import classification_metrics
     from src.models_rootstrap import ROOTSTRAP_LABELS, RootstrapDenseNet
     from src.train_rootstrap_adni import rootstrap_transform
     from src.utils import load_yaml, write_csv, write_json
 
-    from scripts.eval_test import InferenceDataset, N_FOLDS, SEEDS
+    adni_eval = _load_adni_eval_module()
+    InferenceDataset = adni_eval.InferenceDataset
+    N_FOLDS = adni_eval.N_FOLDS
+    SEEDS = adni_eval.SEEDS
 
     proc_root = processed_dir("adni_rootstrap", name)
     metadata_csv = proc_root / "metadata.csv"
@@ -165,7 +235,6 @@ def _eval_adni_rootstrap(name: str, checkpoint_dir: Path | None, device: str, ra
     image_size = tuple(config.get("rootstrap_input_shape", [96, 96, 96]))
     dataset = InferenceDataset(metadata_csv, rootstrap_transform(image_size, train=False))
 
-    # patch checkpoint dir in predict_ensemble via module global - use inline instead
     loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
     logit_sums = {row["ID"]: np.zeros(3, dtype=np.float64) for row in dataset.rows}
     with torch.no_grad():
@@ -192,6 +261,12 @@ def _eval_adni_rootstrap(name: str, checkpoint_dir: Path | None, device: str, ra
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = [{"ID": case_id, "Pre": preds[case_id]} for case_id in sorted(preds)]
     write_csv(out_dir / "pred.csv", rows, ["ID", "Pre"])
+    pred_df = pd.DataFrame(rows)
+
+    tpl = _resolve_template(raw, template)
+    if tpl is not None:
+        sub_path = fill_adni_submission(tpl, pred_df, out_dir / tpl.name.replace("template", "filled"))
+        print(f"  submission -> {sub_path}")
 
     labels_path = None
     if raw is not None:
@@ -214,7 +289,13 @@ def _eval_adni_rootstrap(name: str, checkpoint_dir: Path | None, device: str, ra
     return out_dir
 
 
-def _eval_adni_mri_classifier(name: str, checkpoint_dir: Path | None, device: str, raw: str | Path | None) -> Path:
+def _eval_adni_mri_classifier(
+    name: str,
+    checkpoint_dir: Path | None,
+    device: str,
+    raw: str | Path | None,
+    template: str | Path | None,
+) -> Path:
     _ensure_ukb_path()
     from src.config import load_yaml
     from src.datasets.adni import load_adni_records
@@ -259,8 +340,10 @@ def _eval_adni_mri_classifier(name: str, checkpoint_dir: Path | None, device: st
         with torch.no_grad():
             for x, _, sid in loader:
                 logits = model(x.to(dev))
-                prob = torch.softmax(logits, dim=1).cpu().numpy()[0]
-                prob_sum[str(sid)] += prob
+                probs = torch.softmax(logits, dim=1).cpu().numpy()
+                sids = [str(s) for s in sid] if isinstance(sid, (list, tuple)) else [str(sid)]
+                for i, subject_id in enumerate(sids):
+                    prob_sum[subject_id] += probs[i]
 
     if n_models == 0:
         raise FileNotFoundError(f"No checkpoints under {kfold_dir}")
@@ -275,12 +358,23 @@ def _eval_adni_mri_classifier(name: str, checkpoint_dir: Path | None, device: st
     df = pd.DataFrame(rows).sort_values("ID")
     df[["ID", "Pre"]].to_csv(out_dir / "pred.csv", index=False)
 
+    tpl = _resolve_template(raw, template)
+    if tpl is not None:
+        sub_path = fill_adni_submission(tpl, df, out_dir / tpl.name.replace("template", "filled"))
+        print(f"  submission -> {sub_path}")
+
     _write_adni_metrics(df, csv_path, out_dir, "adni_mri_classifier", raw, name)
     print(f"  -> {out_dir / 'pred.csv'}")
     return out_dir
 
 
-def _eval_adni_sfcn_v4(name: str, checkpoint_dir: Path | None, device: str, raw: str | Path | None) -> Path:
+def _eval_adni_sfcn_v4(
+    name: str,
+    checkpoint_dir: Path | None,
+    device: str,
+    raw: str | Path | None,
+    template: str | Path | None,
+) -> Path:
     _ensure_ukb_path()
     from src.adni_sfcn.config_paths import resolve_sfcn_config_path
     from src.adni_sfcn.daomuyang import build_daomuyang_model, find_github_checkpoints, get_daomuyang_device, load_pretrained_daomuyang
@@ -332,12 +426,18 @@ def _eval_adni_sfcn_v4(name: str, checkpoint_dir: Path | None, device: str, raw:
     for x, _, sid in loader:
         mean_prob = forward_probs(x.to(dev), models, use_tta, daomuyang=True)
         idx = int(np.argmax(mean_prob))
-        rows.append({"ID": sid, "Pre": ["CN", "MCI", "AD"][idx]})
+        subject_id = sid[0] if isinstance(sid, (list, tuple)) else sid
+        rows.append({"ID": str(subject_id), "Pre": ["CN", "MCI", "AD"][idx]})
 
     out_dir = eval_output_dir("adni_sfcn_v4", name)
     out_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows).sort_values("ID")
     df[["ID", "Pre"]].to_csv(out_dir / "pred.csv", index=False)
+
+    tpl = _resolve_template(raw, template)
+    if tpl is not None:
+        sub_path = fill_adni_submission(tpl, df, out_dir / tpl.name.replace("template", "filled"))
+        print(f"  submission -> {sub_path}")
 
     _write_adni_metrics(df, csv_path, out_dir, "adni_sfcn_v4", raw, name)
     print(f"  -> {out_dir / 'pred.csv'}")
@@ -352,15 +452,17 @@ def _write_adni_metrics(
     raw: str | Path | None,
     name: str,
 ) -> None:
+    label_src = csv_path
     labels = pd.read_csv(csv_path)
     id_col, label_col = resolve_id_label_columns(csv_path)
-    if label_col is None:
+    if label_col is None or not csv_has_filled_labels(label_src, label_col):
         if raw is not None:
             labels_path = find_labels_csv(resolve_raw_input(raw), name)
             if labels_path:
+                label_src = labels_path
                 labels = pd.read_csv(labels_path)
                 id_col, label_col = resolve_id_label_columns(labels_path)
-    if label_col is None:
+    if label_col is None or not csv_has_filled_labels(label_src, label_col):
         return
 
     merged = pred_df.merge(

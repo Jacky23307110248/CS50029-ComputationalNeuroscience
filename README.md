@@ -19,7 +19,7 @@
 | 代码（GitHub） | [tree/main/PJ1](https://github.com/Jacky23307110248/CS50029-ComputationalNeuroscience/tree/main/PJ1) |
 | 数据与权重（ModelScope） | [sSzHox/PJ_ADNI_UKB](https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB) |
 
-**测试集**：ModelScope 含 `data/*_test20_release/`（`python scripts/download_modelscope.py --target test20`）；或课程包放入 `PJ1/data/` → `preprocess_test.py`（WSL）→ `eval_test.py`（GPU）→ 结果在 `outputs/test/`。
+**测试集 / 课程提交**：GitHub [`PJ1/Submission/`](PJ1/Submission/) 含填好的两个 CSV；ModelScope 另有 test20 原始数据与 `outputs/test/`。**勿交** `data/` 空 template。预处理需本地 WSL。见 [PJ1/README.md](PJ1/README.md)。
 
 ### PJ2
 
@@ -40,7 +40,7 @@ cd CS50029-ComputationalNeuroscience/PJ1
 pip install modelscope && python scripts/download_modelscope.py
 ```
 
-GitHub：代码；ModelScope：`data/`、预训练与微调权重。预处理中间产物在本地生成。
+GitHub：代码；ModelScope：`data/`、训练权重、test20 提交 CSV；**预处理产物**（`processed/`、`processed_rootstrap/`）需本地 WSL+FSL 生成。
 
 **PJ2**
 

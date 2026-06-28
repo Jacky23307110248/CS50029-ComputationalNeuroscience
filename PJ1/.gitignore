@@ -32,6 +32,7 @@ PJ1_ADNI/outputs/
 **/swanlab/
 **/.ms_upload_cache
 logs/
+archives/
 
 # OS
 .DS_Store

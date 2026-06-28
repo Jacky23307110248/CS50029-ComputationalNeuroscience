@@ -60,7 +60,12 @@ def main() -> None:
     if args.target == "data":
         patterns = ("data/UKB_T1_100cases/**", "data/ADNI_data_105cases/**")
     elif args.target == "test20":
-        patterns = ("data/UKB_test20_release/**", "data/ADNI_test20_release/**")
+        patterns = (
+            "data/UKB_test20_release/**",
+            "data/ADNI_test20_release/**",
+            "PJ1_UKB/outputs/test/**",
+            "PJ1_ADNI/outputs/test/**",
+        )
     elif args.target == "weights":
         patterns = tuple(p for p in DEFAULT_PATTERNS if not p.startswith("data/"))
     else:

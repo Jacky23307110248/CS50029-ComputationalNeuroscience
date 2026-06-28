@@ -11,6 +11,11 @@ Targets mirror repo layout under PJ1/:
   - PJ1_UKB/outputs/ADNI/...     ADNI mri_classifier + sfcn_v4
   - PJ1_ADNI/models/             Rootstrap pretrained (86_acc_model.pth)
   - PJ1_ADNI/outputs/...         Rootstrap finetuned (15 checkpoints)
+  - PJ1_UKB/outputs/test/      test20 推理 pred + submission CSV
+  - PJ1_ADNI/outputs/test/     test20 推理 pred + submission CSV
+
+Full sync (default): walk all targets; skip folders already on ModelScope
+(path + size match). New/changed folders (e.g. test20) upload via SDK cache.
 
 Dataset: https://modelscope.cn/datasets/sSzHox/PJ_ADNI_UKB
 
@@ -60,22 +65,70 @@ UPLOAD_TARGETS: tuple[tuple[str, str], ...] = (
         "PJ1_ADNI/outputs/rootstrap_adni_finetune_data_aug_seed3",
         "PJ1_ADNI/outputs/rootstrap_adni_finetune_data_aug_seed3",
     ),
+    ("PJ1_UKB/outputs/test", "PJ1_UKB/outputs/test"),
+    ("PJ1_ADNI/outputs/test", "PJ1_ADNI/outputs/test"),
 )
 
 SKIP_DIR_NAMES = frozenset({"swanlab", "__pycache__", ".ms_upload_cache", ".git"})
 
 
-def count_files(folder: Path) -> int:
+def iter_local_files(folder: Path) -> list[tuple[str, int]]:
     if not folder.is_dir():
-        return 0
-    n = 0
-    for p in folder.rglob("*"):
-        if not p.is_file():
+        return []
+    out: list[tuple[str, int]] = []
+    for path in folder.rglob("*"):
+        if not path.is_file():
             continue
-        if any(part in SKIP_DIR_NAMES for part in p.parts):
+        if any(part in SKIP_DIR_NAMES for part in path.parts):
             continue
-        n += 1
-    return n
+        rel = path.relative_to(folder).as_posix()
+        out.append((rel, path.stat().st_size))
+    return sorted(out)
+
+
+def count_files(folder: Path) -> int:
+    return len(iter_local_files(folder))
+
+
+def fetch_remote_blob_index(api, repo_id: str, remote_root: str, token: str | None) -> dict[str, int]:
+    """remote relative path (under remote_root) -> size."""
+    prefix = remote_root.rstrip("/") + "/"
+    index: dict[str, int] = {}
+    page = 1
+    while True:
+        batch = api.get_dataset_files(
+            repo_id,
+            root_path=remote_root,
+            recursive=True,
+            page_number=page,
+            page_size=200,
+            token=token,
+        )
+        if not batch:
+            break
+        for item in batch:
+            if item.get("Type") != "blob":
+                continue
+            full_path = str(item.get("Path", "")).replace("\\", "/")
+            if not full_path.startswith(prefix):
+                continue
+            rel = full_path[len(prefix) :]
+            index[rel] = int(item.get("Size") or 0)
+        if len(batch) < 200:
+            break
+        page += 1
+    return index
+
+
+def remote_matches_local(local_files: list[tuple[str, int]], remote_index: dict[str, int]) -> bool:
+    if not local_files:
+        return False
+    for rel, size in local_files:
+        if rel not in remote_index:
+            return False
+        if remote_index[rel] != size:
+            return False
+    return True
 
 
 def main() -> None:
@@ -104,6 +157,11 @@ def main() -> None:
         help="Upload subset only (match local path prefix, e.g. data/UKB_test20_release)",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Upload even if remote already has the same files (skip remote check)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="List local folders only; do not upload",
@@ -117,15 +175,15 @@ def main() -> None:
         if not targets:
             raise SystemExit(f"No upload targets match --only {args.only}")
 
-    planned: list[tuple[Path, str, int]] = []
+    planned: list[tuple[Path, str, str, int]] = []
     for local_rel, remote_rel in targets:
         local_path = ROOT / local_rel
-        n_files = count_files(local_path)
-        if n_files == 0:
+        local_files = iter_local_files(local_path)
+        if not local_files:
             print(f"Skip (missing or empty): {local_rel}")
             continue
-        planned.append((local_path, remote_rel, n_files))
-        print(f"Will upload: {local_rel} -> {remote_rel}/  ({n_files} files)")
+        planned.append((local_path, local_rel, remote_rel, len(local_files)))
+        print(f"Queued: {local_rel} -> {remote_rel}/  ({len(local_files)} files)")
 
     if not planned:
         print("Nothing to upload.")
@@ -149,19 +207,40 @@ def main() -> None:
     api = HubApi()
     api.login(args.token)
 
-    for local_path, remote_rel, n_files in planned:
+    uploaded = 0
+    skipped = 0
+    for local_path, local_rel, remote_rel, n_files in planned:
+        local_files = iter_local_files(local_path)
+        if not args.force:
+            print(f"\nChecking remote: {remote_rel} ...")
+            remote_index = fetch_remote_blob_index(api, args.repo_id, remote_rel, args.token)
+            if remote_matches_local(local_files, remote_index):
+                print(f"Already exists on ModelScope, skip: {local_rel} ({n_files} files)")
+                skipped += 1
+                continue
+
         msg = f"{args.commit_message}: {remote_rel} ({n_files} files)"
-        print(f"\nUploading {local_path} -> {args.repo_id}/{remote_rel} ...")
-        api.upload_folder(
+        print(f"\nUploading {local_rel} -> {args.repo_id}/{remote_rel} ...")
+        result = api.upload_folder(
             repo_id=args.repo_id,
             folder_path=str(local_path),
             path_in_repo=remote_rel,
             commit_message=msg,
             repo_type="dataset",
+            token=args.token,
+            use_cache=True,
         )
-        print(f"Done: {remote_rel}")
+        if result is None:
+            print(f"Up to date (SDK cache): {remote_rel}")
+            skipped += 1
+        else:
+            print(f"Done: {remote_rel}")
+            uploaded += 1
 
-    print(f"\nAll uploads finished -> https://modelscope.cn/datasets/{args.repo_id}")
+    print(
+        f"\nAll finished -> https://modelscope.cn/datasets/{args.repo_id}\n"
+        f"  uploaded: {uploaded}  skipped (already exists): {skipped}"
+    )
 
 
 if __name__ == "__main__":
